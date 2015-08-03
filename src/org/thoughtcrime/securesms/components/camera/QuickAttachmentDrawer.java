@@ -21,6 +21,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageButton;
 
+import com.commonsware.cwac.camera.*;
+import com.commonsware.cwac.camera.CameraView;
 import com.nineoldandroids.animation.ObjectAnimator;
 
 import org.thoughtcrime.securesms.R;
@@ -30,6 +32,8 @@ import org.thoughtcrime.securesms.components.camera.QuickCamera.QuickCameraListe
 import org.thoughtcrime.securesms.util.ServiceUtil;
 import org.thoughtcrime.securesms.util.Util;
 import org.thoughtcrime.securesms.util.ViewUtil;
+
+import java.util.List;
 
 public class QuickAttachmentDrawer extends ViewGroup implements InputView {
   private static final String TAG = QuickAttachmentDrawer.class.getSimpleName();
@@ -44,6 +48,7 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
   private ImageButton               fullScreenButton;
   private ImageButton               swapCameraButton;
   private ImageButton               shutterButton;
+  private ImageButton               flashButton;
   private int                       slideOffset;
   private float                     initialMotionX;
   private float                     initialMotionY;
@@ -51,6 +56,8 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
   private AttachmentDrawerListener  listener;
   private int                       halfExpandedHeight;
   private ObjectAnimator            animator;
+  private FlashInfoListener         flashInfoListener;
+  private String                    flashMode;
 
   private DrawerState drawerState      = DrawerState.COLLAPSED;
   private Rect        drawChildrenRect = new Rect();
@@ -75,6 +82,11 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
   private void initializeView() {
     inflate(getContext(), R.layout.quick_attachment_drawer, this);
     quickCamera = (QuickCamera) findViewById(R.id.quick_camera);
+
+    flashInfoListener = new FlashInfoListener();
+    quickCamera.setFlashInfoListener(flashInfoListener);
+    flashMode = Camera.Parameters.FLASH_MODE_AUTO;
+
     updateControlsView();
 
     coverViewPosition = getChildCount();
@@ -121,10 +133,13 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
     shutterButton    = (ImageButton) controls.findViewById(R.id.shutter_button);
     swapCameraButton = (ImageButton) controls.findViewById(R.id.swap_camera_button);
     fullScreenButton = (ImageButton) controls.findViewById(R.id.fullscreen_button);
+    flashButton      = (ImageButton) controls.findViewById(R.id.flash_button);
     if (quickCamera.isMultipleCameras()) {
       swapCameraButton.setVisibility(View.VISIBLE);
       swapCameraButton.setOnClickListener(new CameraFlipClickListener());
     }
+    flashButton.setVisibility(View.INVISIBLE);
+    flashButton.setOnClickListener(new FlashClickListener());
     shutterButton.setOnClickListener(new ShutterClickListener());
     fullScreenButton.setOnClickListener(new FullscreenClickListener());
     ViewUtil.swapChildInPlace(this, this.controls, controls, indexOfChild(quickCamera) + 1);
@@ -333,7 +348,7 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
 
   public void setListener(AttachmentDrawerListener listener) {
     this.listener = listener;
-    if (quickCamera != null) quickCamera.setQuickCameraListener(listener);
+    quickCamera.setQuickCameraListener(listener);
   }
 
   public interface AttachmentDrawerListener extends QuickCameraListener {
@@ -503,6 +518,8 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
     quickCamera.onPause();
   }
 
+  private void pauseCameraView() {}
+
   public void onResume() {
     paused = false;
     if (drawerState.isVisible()) quickCamera.onResume();
@@ -522,7 +539,7 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
       boolean crop        = drawerState != DrawerState.FULL_EXPANDED;
       int     imageHeight = crop ? getContainer().getKeyboardHeight() : quickCamera.getMeasuredHeight();
       Rect    previewRect = new Rect(0, 0, quickCamera.getMeasuredWidth(), imageHeight);
-      quickCamera.takePicture(previewRect);
+      quickCamera.takePicture(previewRect, flashMode);
     }
   }
 
@@ -531,7 +548,7 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
     public void onClick(View v) {
       quickCamera.swapCamera();
       swapCameraButton.setImageResource(quickCamera.isRearCamera() ? R.drawable.quick_camera_front
-                                                                   : R.drawable.quick_camera_rear);
+                                                                  : R.drawable.quick_camera_rear);
     }
   }
 
@@ -544,6 +561,32 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
         setDrawerStateAndUpdate(DrawerState.COLLAPSED);
       } else {
         setDrawerStateAndUpdate(DrawerState.HALF_EXPANDED);
+      }
+    }
+  }
+
+  private class FlashInfoListener implements QuickCamera.FlashInfoListener {
+
+    @Override
+    public void supportedModes(List<String> modes) {
+      boolean enable = modes != null && modes.contains(Camera.Parameters.FLASH_MODE_ON);
+
+      flashButton.setVisibility(enable ? View.VISIBLE : View.INVISIBLE);
+    }
+  }
+
+  private class FlashClickListener implements OnClickListener {
+    @Override
+    public void onClick(View v) {
+      if (flashMode.equals(Camera.Parameters.FLASH_MODE_AUTO)) {
+        flashMode = Camera.Parameters.FLASH_MODE_ON;
+        flashButton.setImageResource(R.drawable.quick_camera_flash_on);
+      } else if (flashMode.equals(Camera.Parameters.FLASH_MODE_ON)) {
+        flashMode = Camera.Parameters.FLASH_MODE_OFF;
+        flashButton.setImageResource(R.drawable.quick_camera_flash_off);
+      } else {
+        flashMode = Camera.Parameters.FLASH_MODE_AUTO;
+        flashButton.setImageResource(R.drawable.quick_camera_flash_auto);
       }
     }
   }

@@ -7,27 +7,26 @@ import android.hardware.Camera;
 import android.hardware.Camera.CameraInfo;
 import android.hardware.Camera.Parameters;
 import android.hardware.Camera.Size;
-import android.os.AsyncTask;
 import android.os.Build.VERSION_CODES;
 import android.support.annotation.NonNull;
 import android.util.AttributeSet;
 import android.util.Log;
 
 import com.commonsware.cwac.camera.CameraHost.FailureReason;
+import com.commonsware.cwac.camera.PictureTransaction;
 import com.commonsware.cwac.camera.SimpleCameraHost;
+import com.commonsware.cwac.camera.CameraView;
 
-import org.thoughtcrime.securesms.util.BitmapUtil;
-
-import java.io.IOException;
 import java.util.List;
 
 @SuppressWarnings("deprecation") public class QuickCamera extends CameraView {
   private static final String TAG = QuickCamera.class.getSimpleName();
 
-  private QuickCameraListener listener;
+  private QuickCameraListener quickCameraListener;
   private boolean             capturing;
   private boolean             started;
   private QuickCameraHost     cameraHost;
+  private String              flashMode;
 
   public QuickCamera(Context context) {
     this(context, null);
@@ -61,18 +60,16 @@ import java.util.List;
     return started;
   }
 
-  public void takePicture(final Rect previewRect) {
+  public void takePicture(final Rect previewRect, final String flashMode) {
     if (capturing) {
       Log.w(TAG, "takePicture() called while previous capture pending.");
       return;
     }
 
-    final Parameters cameraParameters = getCameraParameters();
-    if (cameraParameters == null) {
-      Log.w(TAG, "camera not in capture-ready state");
-      return;
-    }
-
+    capturing = true;
+    this.flashMode = flashMode;
+    takePicture(false, true);
+    /*
     setOneShotPreviewCallback(new Camera.PreviewCallback() {
       @Override
       public void onPreviewFrame(byte[] data, final Camera camera) {
@@ -103,11 +100,11 @@ import java.util.List;
           @Override
           protected void onPostExecute(byte[] imageBytes) {
             capturing = false;
-            if (imageBytes != null && listener != null) listener.onImageCapture(imageBytes);
+            if (imageBytes != null && quickCameraListener != null) quickCameraListener.onImageCapture(imageBytes);
           }
         }.execute(data);
       }
-    });
+    });*/
   }
 
   private Rect getCroppedRect(Size cameraPreviewSize, Rect visibleRect, int rotation) {
@@ -138,10 +135,6 @@ import java.util.List;
     rect.set(rect.top, rect.left, rect.bottom, rect.right);
   }
 
-  public void setQuickCameraListener(QuickCameraListener listener) {
-    this.listener = listener;
-  }
-
   public boolean isMultipleCameras() {
     return Camera.getNumberOfCameras() > 1;
   }
@@ -156,16 +149,42 @@ import java.util.List;
     onResume();
   }
 
+  public interface FlashInfoListener {
+    void supportedModes(List<String> modes);
+  }
+
+  void setFlashInfoListener(FlashInfoListener listener) {
+    cameraHost.setFlashInfoListener(listener);
+  }
+
   public interface QuickCameraListener {
     void onImageCapture(@NonNull final byte[] imageBytes);
     void onCameraFail(FailureReason reason);
   }
 
-  private class QuickCameraHost extends SimpleCameraHost {
+  public void setQuickCameraListener(QuickCameraListener listener) {
+    this.quickCameraListener = listener;
+  }
+
+  public class QuickCameraHost extends SimpleCameraHost {
     int cameraId = CameraInfo.CAMERA_FACING_BACK;
+    private FlashInfoListener flashInfoListener = null;
+    private QuickCameraListener quickCameraListener;
 
     public QuickCameraHost(Context context) {
       super(context);
+    }
+
+    @Override
+    public void saveImage(PictureTransaction xact, byte[] image) {
+      capturing = false;
+      if (image != null && QuickCamera.this.quickCameraListener != null) QuickCamera.this.quickCameraListener.onImageCapture(image);
+    }
+
+    @Override
+    public Parameters adjustPictureParameters(PictureTransaction xact, Parameters parameters) {
+      parameters.setFlashMode(flashMode);
+      return parameters;
     }
 
     @TargetApi(VERSION_CODES.ICE_CREAM_SANDWICH) @Override
@@ -176,6 +195,11 @@ import java.util.List;
       } else if (focusModes.contains(Parameters.FOCUS_MODE_CONTINUOUS_VIDEO)) {
         parameters.setFocusMode(Parameters.FOCUS_MODE_CONTINUOUS_VIDEO);
       }
+
+      if (flashInfoListener != null) {
+        flashInfoListener.supportedModes(parameters.getSupportedFlashModes());
+      }
+
       return parameters;
     }
 
@@ -194,7 +218,11 @@ import java.util.List;
     @Override
     public void onCameraFail(FailureReason reason) {
       super.onCameraFail(reason);
-      if (listener != null) listener.onCameraFail(reason);
+      if (QuickCamera.this.quickCameraListener != null) QuickCamera.this.quickCameraListener.onCameraFail(reason);
+    }
+
+    public void setFlashInfoListener(FlashInfoListener listener) {
+      this.flashInfoListener = listener;
     }
   }
 }

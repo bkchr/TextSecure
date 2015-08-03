@@ -36,4 +36,15 @@
                  android:visibility="invisible"
                  tools:visibility="visible" />
 
+    <ImageButton android:id="@+id/flash_button"
+                 android:layout_width="wrap_content"
+                 android:layout_height="wrap_content"
+                 android:layout_toRightOf="@id/swap_camera_button"
+                 android:layout_alignParentBottom="true"
+                 android:background="#00000000"
+                 android:src="@drawable/quick_camera_flash_auto"
+                 android:padding="20dp"
+                 android:visibility="invisible"
+                 tools:visibility="visible"/>
+
 </RelativeLayout>
